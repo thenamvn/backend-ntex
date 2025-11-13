@@ -38,7 +38,6 @@ class HealthService:
             Created health data record
         """
         cry_detected = False
-        sick_detected = False
         audio_url = None
         
         # Process audio file if present
@@ -63,29 +62,54 @@ class HealthService:
                 cry_detected = self.cry_detector.analyze(file_path)
             except Exception as e:
                 print(f"Error analyzing audio: {e}")
-                # Continue processing even if analysis fails
         
-        # Determine if baby is potentially sick
-        # Criteria: crying detected AND high temperature
-        if cry_detected and data.temperature > 38.0:
-            sick_detected = True
+        # ✅ LOGIC: Xác định sick_detected dựa trên nhiệt độ
+        # Nhiệt độ >= 38.0°C → sốt → sick_detected = True
+        sick_detected = data.temperature >= 38.0
         
-        # Create database record
-        db_record = HealthData(
-            user_id=user_id,
-            temperature=data.temperature,
-            humidity=data.humidity,
-            audio_url=audio_url,
-            cry_detected=cry_detected,
-            sick_detected=sick_detected,
-            notes=data.notes
+        # 🔍 Debug log
+        print(f"🌡️ Temperature: {data.temperature}°C → sick_detected: {sick_detected}")
+        
+        # ✅ FIX: Dùng raw SQL INSERT để bypass SQLModel composite key issue
+        insert_query = text("""
+            INSERT INTO health_data (
+                user_id, temperature, humidity, audio_url, 
+                cry_detected, sick_detected, notes, created_at
+            ) VALUES (
+                :user_id, :temperature, :humidity, :audio_url,
+                :cry_detected, :sick_detected, :notes, NOW()
+            )
+            RETURNING id, created_at
+        """)
+        
+        result = db.execute(
+            insert_query,
+            {
+                "user_id": user_id,
+                "temperature": data.temperature,
+                "humidity": data.humidity,
+                "audio_url": audio_url,
+                "cry_detected": cry_detected,
+                "sick_detected": sick_detected,
+                "notes": data.notes
+            }
         )
         
-        db.add(db_record)
+        row = result.fetchone()
         db.commit()
-        db.refresh(db_record)
         
-        # 🚀 ALWAYS send WebSocket update with new health data
+        # Fetch the complete record
+        db_record = db.exec(
+            select(HealthData).where(
+                HealthData.id == row[0],
+                HealthData.created_at == row[1]
+            )
+        ).first()
+        
+        # ✅ Verify saved value
+        print(f"💾 Saved to DB → sick_detected: {db_record.sick_detected}")
+        
+        # 🚀 Send WebSocket update
         await self._send_health_update(user_id, db_record)
         
         return db_record
@@ -111,13 +135,22 @@ class HealthService:
             }
         }
         
-        # If crying is detected, send special alert
-        if health_data.cry_detected:
+        # ✅ Phân loại cảnh báo theo mức độ nghiêm trọng
+        if health_data.sick_detected and health_data.cry_detected:
+            # 🚨 Cảnh báo mức CAO: Khóc + Sốt
+            message["event"] = "CRITICAL_ALERT"
+            message["alert"] = "🚨 BÉ ĐANG SỐT VÀ KHÓC! Kiểm tra ngay!"
+            message["severity"] = "critical"
+        elif health_data.sick_detected:
+            # ⚠️ Cảnh báo mức TRUNG BÌNH: Chỉ sốt
+            message["event"] = "FEVER_ALERT"
+            message["alert"] = "⚠️ Bé đang sốt! Nhiệt độ cao hơn 38°C"
+            message["severity"] = "warning"
+        elif health_data.cry_detected:
+            # ℹ️ Thông báo: Chỉ khóc (không sốt)
             message["event"] = "CRY_DETECTED"
-            message["alert"] = "Baby is crying!"
-            
-            if health_data.sick_detected:
-                message["alert"] = "⚠️ Baby may be sick! High temperature detected!"
+            message["alert"] = "ℹ️ Bé đang khóc"
+            message["severity"] = "info"
         
         try:
             await connection_manager.broadcast_to_user(user_id, message)

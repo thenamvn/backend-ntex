@@ -91,7 +91,22 @@ class ConnectionManager:
                 del self.active_connections[user_id]
         
         print(f"User {user_id} disconnected")
+
+        print(f"User {user_id} disconnected. Remaining connections: {len(self.active_connections.get(user_id, []))}")
     
+    async def send_personal_message(self, message: dict, websocket: WebSocket):
+        """
+        Send a message to a specific WebSocket connection.
+        
+        Args:
+            message: Message data to send (will be JSON encoded)
+            websocket: Target WebSocket connection
+        """
+        try:
+            await websocket.send_json(message)
+        except Exception as e:
+            print(f"Error sending message: {e}")
+            
     async def broadcast_to_user(self, user_id: int, message: dict):
         """
         Broadcast a message to all connections of a specific user.
