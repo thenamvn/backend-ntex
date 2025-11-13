@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: babycare-db
+    ports:
+      - "5433:5432"  # Port 5433 để không conflict với PostgreSQL hiện tại
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 2182004nam
+      POSTGRES_DB: babycare
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  timescale-data:

@@ -1,0 +1,29 @@
+# FastAPI and Server
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Database
+sqlmodel
+psycopg2-binary
+alembic
+
+# Authentication
+python-jose[cryptography]
+passlib[bcrypt]
+python-dotenv
+
+# AI/ML for Cry Detection
+torch
+torchaudio
+numpy
+librosa
+matplotlib
+ultralytics
+
+# WebSocket
+websockets
+
+# Utilities
+pydantic
+pydantic-settings
