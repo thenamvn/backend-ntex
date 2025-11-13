@@ -1,5 +1,6 @@
 from typing import List, Optional
-from sqlmodel import Field, Relationship, SQLModel
+from sqlmodel import Field, Relationship, SQLModel, Column, Integer, TIMESTAMP
+from sqlalchemy import func
 from datetime import datetime
 
 
@@ -23,19 +24,31 @@ class HealthData(SQLModel, table=True):
     """
     Health data model storing baby monitoring information.
     Optimized for time-series data with TimescaleDB.
+    
+    Note: Uses composite primary key (id, created_at) as required by TimescaleDB.
     """
     
     __tablename__ = "health_data"
     
     # Composite primary key: id + created_at (required for TimescaleDB hypertable)
-    id: Optional[int] = Field(default=None, primary_key=True)
+    id: int = Field(
+        sa_column=Column(
+            Integer,
+            primary_key=True,
+            autoincrement=True
+        )
+    )
+    
     created_at: datetime = Field(
-        default_factory=datetime.utcnow,
-        primary_key=True,  # Part of composite key for TimescaleDB
-        index=True,
+        sa_column=Column(
+            TIMESTAMP,
+            primary_key=True,
+            server_default=func.now()
+        ),
         description="Timestamp for time-series data"
     )
     
+    # User relationship
     user_id: int = Field(foreign_key="users.id", index=True)
     
     # Sensor data

@@ -4,10 +4,10 @@ from ..config import settings
 # Create database engine
 engine = create_engine(
     settings.database_url,
-    echo=settings.debug,  # Log SQL queries in debug mode
-    pool_pre_ping=True,   # Verify connections before using them
-    pool_size=10,         # Connection pool size
-    max_overflow=20       # Max connections beyond pool_size
+    echo=settings.debug,
+    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=20
 )
 
 
@@ -38,18 +38,21 @@ def create_db_and_tables():
                                 'health_data',
                                 'created_at',
                                 if_not_exists => TRUE,
-                                migrate_data => TRUE
+                                migrate_data => TRUE,
+                                chunk_time_interval => INTERVAL '1 day'
                             );
                         """)
                     )
                     session.commit()
                     print("✅ Created TimescaleDB hypertable for health_data")
                 except Exception as e:
-                    if "already a hypertable" not in str(e):
-                        print(f"⚠️ Warning creating hypertable: {e}")
-                    else:
+                    error_msg = str(e).lower()
+                    if "already a hypertable" in error_msg:
                         print("✅ Hypertable already exists")
-                    session.rollback()
+                        session.rollback()
+                    else:
+                        print(f"⚠️ Warning creating hypertable: {e}")
+                        session.rollback()
                         
             else:
                 print("⚠️ TimescaleDB extension not found. Using standard PostgreSQL.")
@@ -59,7 +62,6 @@ def create_db_and_tables():
             session.rollback()
     
     # Create continuous aggregate and retention policy outside transaction
-    # These operations require AUTOCOMMIT mode
     try:
         connection = engine.raw_connection()
         connection.set_isolation_level(0)  # AUTOCOMMIT mode
