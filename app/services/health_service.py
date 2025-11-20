@@ -136,18 +136,34 @@ class HealthService:
         }
         
         # ✅ Phân loại cảnh báo theo mức độ nghiêm trọng
+        needs_diaper_change = health_data.humidity > 79.0
+        
         if health_data.sick_detected and health_data.cry_detected:
             # 🚨 Cảnh báo mức CAO: Khóc + Sốt
             message["event"] = "CRITICAL_ALERT"
             message["alert"] = "🚨 BÉ ĐANG SỐT VÀ KHÓC! Kiểm tra ngay!"
             message["severity"] = "critical"
+        
+        elif needs_diaper_change and health_data.cry_detected:
+            # 💩 Cảnh báo: Độ ẩm cao + Khóc → Đi vệ sinh
+            message["event"] = "DIAPER_ALERT"
+            message["alert"] = "💩 Bé có thể đã đi vệ sinh! Độ ẩm cao và đang khóc."
+            message["severity"] = "warning"
+        
+        elif needs_diaper_change:
+            # 💧 Cảnh báo: Chỉ độ ẩm cao → Có thể đi vệ sinh
+            message["event"] = "HUMIDITY_ALERT"
+            message["alert"] = "💧 Độ ẩm cao! Bé có thể đã đi vệ sinh."
+            message["severity"] = "info"
+        
         elif health_data.sick_detected:
             # ⚠️ Cảnh báo mức TRUNG BÌNH: Chỉ sốt
             message["event"] = "FEVER_ALERT"
             message["alert"] = "⚠️ Bé đang sốt! Nhiệt độ cao hơn 38°C"
             message["severity"] = "warning"
+        
         elif health_data.cry_detected:
-            # ℹ️ Thông báo: Chỉ khóc (không sốt)
+            # ℹ️ Thông báo: Chỉ khóc (không sốt, độ ẩm bình thường)
             message["event"] = "CRY_DETECTED"
             message["alert"] = "ℹ️ Bé đang khóc"
             message["severity"] = "info"
