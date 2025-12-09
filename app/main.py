@@ -2,12 +2,13 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import os
-
+import asyncio
 from .config import settings
 from .db.database import create_db_and_tables
 from .routers import auth_router, health_router
 from .websocket import connection_manager
 from .services import get_current_user
+from .services.mqtt_service import mqtt_service
 
 
 @asynccontextmanager
@@ -31,12 +32,17 @@ async def lifespan(app: FastAPI):
     os.makedirs(os.path.dirname(settings.cry_model_path), exist_ok=True)
     print(f"🤖 AI models directory ready: {settings.cry_model_path}")
 
+    # Start MQTT Service
+    loop = asyncio.get_event_loop()
+    mqtt_service.start(loop)
+
     print("✅ Application started successfully!")
     
     yield
     
     # Shutdown
     print("👋 Shutting down Baby Health Monitoring API...")
+    mqtt_service.stop()
 
 
 # Create FastAPI app
@@ -86,7 +92,9 @@ async def health_check():
         "status": "healthy",
         "database": "connected",
         "websocket_connections": connection_manager.get_total_connections(),
-        "connected_users": len(connection_manager.get_connected_users())
+        "connected_users": len(connection_manager.get_connected_users()),
+        "mqtt_broker": f"{settings.mqtt_broker}:{settings.mqtt_port}",
+        "mqtt_topic": settings.mqtt_topic
     }
 
 
@@ -165,6 +173,7 @@ if __name__ == "__main__":
     import uvicorn
     print("🔧 Running in development mode")
     print("📚 API Documentation: http://localhost:8000/docs")
+    print(f"🔌 MQTT Broker: {settings.mqtt_broker}:{settings.mqtt_port}")
     print("🔌 WebSocket: ws://localhost:8000/ws/{user_id}?token=<jwt_token>")
     uvicorn.run(
         "app.main:app",

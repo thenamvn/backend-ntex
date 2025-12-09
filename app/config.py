@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     
     # AI Model - renamed to avoid Pydantic conflict
     cry_model_path: str = "models/best.pt"
+
+    # 🚀 MQTT Configuration - NEW
+    mqtt_broker: str = "localhost"  # Địa chỉ MQTT broker
+    mqtt_port: int = 1883
+    mqtt_topic: str = "baby/health"  # Topic để subscribe
+    mqtt_username: Optional[str] = None
+    mqtt_password: Optional[str] = None
+    mqtt_client_id: str = "babycare-backend"
     
     class Config:
         env_file = ".env"
