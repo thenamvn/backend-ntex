@@ -70,7 +70,7 @@ class HealthService:
         # 🔍 Debug log
         print(f"🌡️ Temperature: {data.temperature}°C → sick_detected: {sick_detected}")
         
-        # ✅ FIX: Dùng raw SQL INSERT để bypass SQLModel composite key issue
+        # ✅ FIX: Single INSERT query with full RETURNING clause
         insert_query = text("""
             INSERT INTO health_data (
                 user_id, temperature, humidity, audio_url, 
@@ -79,7 +79,8 @@ class HealthService:
                 :user_id, :temperature, :humidity, :audio_url,
                 :cry_detected, :sick_detected, :notes, NOW()
             )
-            RETURNING id, created_at
+            RETURNING id, user_id, temperature, humidity, audio_url, 
+                      cry_detected, sick_detected, notes, created_at
         """)
         
         result = db.execute(
@@ -98,7 +99,8 @@ class HealthService:
         row = result.fetchone()
         db.commit()
         
-        # Fetch the complete record
+        # ✅ Construct HealthData object directly from returned row
+        # No second SELECT query needed!
         db_record = HealthData(
             id=row[0],
             user_id=row[1],
