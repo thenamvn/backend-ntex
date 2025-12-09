@@ -117,28 +117,24 @@ class MQTTService:
         cry_detected: bool
     ):
         """
-        Lưu health data vào database (giống như /health/upload).
+        Save health data to database (same as /health/upload).
+        Optimized to use single INSERT query with RETURNING clause.
         
         Args:
             user_id: User ID
-            temperature: Nhiệt độ
-            humidity: Độ ẩm
-            cry_detected: Có khóc hay không
+            temperature: Temperature in Celsius
+            humidity: Humidity percentage
+            cry_detected: Whether baby is crying
         """
         try:
+            from sqlalchemy import text
+            from ..db.models import HealthData
+            
             with Session(engine) as db:
-                health_data = HealthDataCreate(
-                    temperature=temperature,
-                    humidity=humidity,
-                    notes="Auto-uploaded from MQTT sensor"
-                )
-                
-                from sqlalchemy import text
-                
                 # Determine sick_detected based on temperature only
                 sick_detected = temperature >= 38.0
                 
-                # Insert into database
+                # ✅ Single INSERT query with RETURNING clause
                 insert_query = text("""
                     INSERT INTO health_data (
                         user_id, temperature, humidity, audio_url, 
@@ -147,7 +143,8 @@ class MQTTService:
                         :user_id, :temperature, :humidity, :audio_url,
                         :cry_detected, :sick_detected, :notes, NOW()
                     )
-                    RETURNING id, created_at
+                    RETURNING id, user_id, temperature, humidity, audio_url, 
+                              cry_detected, sick_detected, notes, created_at
                 """)
                 
                 result = db.execute(
@@ -159,22 +156,26 @@ class MQTTService:
                         "audio_url": None,
                         "cry_detected": cry_detected,
                         "sick_detected": sick_detected,
-                        "notes": health_data.notes
+                        "notes": "Auto-uploaded from MQTT sensor"
                     }
                 )
                 
                 row = result.fetchone()
                 db.commit()
                 
-                from sqlmodel import select
-                from ..db.models import HealthData
-                
-                db_record = db.exec(
-                    select(HealthData).where(
-                        HealthData.id == row[0],
-                        HealthData.created_at == row[1]
-                    )
-                ).first()
+                # ✅ Construct HealthData object directly from returned row
+                # No second SELECT query needed!
+                db_record = HealthData(
+                    id=row[0],
+                    user_id=row[1],
+                    temperature=row[2],
+                    humidity=row[3],
+                    audio_url=row[4],
+                    cry_detected=row[5],
+                    sick_detected=row[6],
+                    notes=row[7],
+                    created_at=row[8]
+                )
                 
                 print(f"✅ Saved MQTT data to DB: ID={db_record.id}, sick_detected={db_record.sick_detected}")
                 

@@ -225,3 +225,166 @@ async def get_health_record(
 async def test_health():
     """Test endpoint to verify health router is working."""
     return {"message": "Health router is working!", "cry_detection": "AI model ready"}
+
+
+# ========================================
+# 🆕 NEW CHART ENDPOINTS
+# ========================================
+
+@router.get("/charts/temperature-humidity")
+async def get_temperature_humidity_chart(
+    interval: str = Query(default="1 hour", description="Time interval"),
+    days: int = Query(default=1, ge=1, le=30, description="Days to look back"),
+    db: Session = Depends(get_db_session),
+    current_user: UserRead = Depends(get_current_user)
+):
+    """
+    📈 LINE CHART: Nhiệt độ & Độ ẩm theo thời gian
+    
+    **Query Parameters:**
+    - **interval**: '1 hour', '6 hours', '1 day'
+    - **days**: 1, 7, 30 (số ngày lùi lại)
+    
+    **Returns:**
+    ```json
+    {
+      "labels": ["11/13 08:00", "11/13 09:00", ...],
+      "temperature": [37.2, 37.5, 38.1, ...],
+      "humidity": [65.0, 68.5, 72.0, ...]
+    }
+    ```
+    
+    **Flutter Chart**: Use `fl_chart` LineChart
+    """
+    try:
+        data = health_service.get_chart_data_temperature_humidity(
+            db=db,
+            user_id=current_user.id,
+            interval=interval,
+            days=days
+        )
+        return data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating chart data: {str(e)}"
+        )
+
+
+@router.get("/charts/cry-frequency")
+async def get_cry_frequency_chart(
+    interval: str = Query(default="1 day", description="Time interval"),
+    days: int = Query(default=7, ge=1, le=30, description="Days to look back"),
+    db: Session = Depends(get_db_session),
+    current_user: UserRead = Depends(get_current_user)
+):
+    """
+    📊 BAR CHART: Số lần khóc theo thời gian
+    
+    **Query Parameters:**
+    - **interval**: '1 hour', '1 day'
+    - **days**: 7, 30 (số ngày lùi lại)
+    
+    **Returns:**
+    ```json
+    {
+      "labels": ["Mon 11", "Tue 12", "Wed 13", ...],
+      "cry_count": [5, 3, 8, 2, 1, 4, 6],
+      "sick_count": [1, 0, 2, 0, 0, 1, 1]
+    }
+    ```
+    
+    **Flutter Chart**: Use `fl_chart` BarChart
+    """
+    try:
+        data = health_service.get_chart_data_cry_frequency(
+            db=db,
+            user_id=current_user.id,
+            interval=interval,
+            days=days
+        )
+        return data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating chart data: {str(e)}"
+        )
+
+
+@router.get("/charts/health-distribution")
+async def get_health_distribution_chart(
+    days: int = Query(default=7, ge=1, le=30, description="Days to look back"),
+    db: Session = Depends(get_db_session),
+    current_user: UserRead = Depends(get_current_user)
+):
+    """
+    🥧 PIE CHART: Phân bố trạng thái sức khỏe
+    
+    **Query Parameters:**
+    - **days**: 7, 30 (số ngày lùi lại)
+    
+    **Returns:**
+    ```json
+    {
+      "labels": ["Bình thường", "Khóc", "Sốt", "Nguy hiểm"],
+      "values": [120, 15, 8, 3],
+      "percentages": [82.2, 10.3, 5.5, 2.1],
+      "colors": ["#4CAF50", "#FFC107", "#FF9800", "#F44336"]
+    }
+    ```
+    
+    **Flutter Chart**: Use `fl_chart` PieChart
+    """
+    try:
+        data = health_service.get_chart_data_health_distribution(
+            db=db,
+            user_id=current_user.id,
+            days=days
+        )
+        return data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating chart data: {str(e)}"
+        )
+
+
+@router.get("/charts/hourly-heatmap")
+async def get_hourly_heatmap_chart(
+    days: int = Query(default=7, ge=1, le=30, description="Days to look back"),
+    db: Session = Depends(get_db_session),
+    current_user: UserRead = Depends(get_current_user)
+):
+    """
+    🔥 HEATMAP: Giờ nào bé hay khóc (theo giờ và ngày trong tuần)
+    
+    **Query Parameters:**
+    - **days**: 7, 30 (số ngày lùi lại)
+    
+    **Returns:**
+    ```json
+    {
+      "hours": [0, 1, 2, ..., 23],
+      "days": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+      "data": [
+        [0, 0, 1, 2, ...],
+        [1, 0, 0, 3, ...],
+        ...
+      ]
+    }
+    ```
+    
+    **Flutter Chart**: Use custom heatmap widget
+    """
+    try:
+        data = health_service.get_chart_data_hourly_heatmap(
+            db=db,
+            user_id=current_user.id,
+            days=days
+        )
+        return data
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating chart data: {str(e)}"
+        )

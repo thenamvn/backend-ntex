@@ -141,7 +141,7 @@ class HealthService:
         }
         
         # ✅ Phân loại cảnh báo theo mức độ nghiêm trọng
-        needs_diaper_change = health_data.humidity > 79.0
+        needs_diaper_change = health_data.humidity > 80.0
         
         if health_data.sick_detected and health_data.cry_detected:
             # 🚨 Cảnh báo mức CAO: Khóc + Sốt
@@ -215,7 +215,15 @@ class HealthService:
         return results
     
     def get_health_stats(self, db: Session, user_id: int) -> HealthDataStats:
-        """Get statistics for user's health data."""
+        """
+        Get SUMMARY statistics for user's health data.
+        
+        ⚠️ This is for OVERVIEW only, NOT for charts!
+        For charts, use get_chart_data_* methods.
+        
+        Returns:
+            HealthDataStats: Summary counts and averages
+        """
         # Total records
         total_statement = select(func.count(HealthData.id)).where(HealthData.user_id == user_id)
         total_records = db.exec(total_statement).one()
@@ -257,6 +265,256 @@ class HealthService:
             avg_humidity=round(avg_humidity, 2),
             latest_record=latest_record
         )
+    
+    # ========================================
+    # 🆕 NEW CHART DATA METHODS
+    # ========================================
+    
+    def get_chart_data_temperature_humidity(
+        self,
+        db: Session,
+        user_id: int,
+        interval: str = "1 hour",
+        days: int = 1
+    ) -> Dict[str, Any]:
+        """
+        📈 LINE CHART: Nhiệt độ & Độ ẩm theo thời gian
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            interval: Time bucket ('1 hour', '6 hours', '1 day')
+            days: Number of days to look back (1, 7, 30)
+        
+        Returns:
+            {
+                "labels": ["2025-11-13 08:00", "2025-11-13 09:00", ...],
+                "temperature": [37.2, 37.5, 38.1, ...],
+                "humidity": [65.0, 68.5, 72.0, ...]
+            }
+        
+        Usage in Flutter:
+            - Use fl_chart LineChart
+            - X-axis: time labels
+            - Y-axis: temperature (line 1), humidity (line 2)
+        """
+        start_date = datetime.utcnow() - timedelta(days=days)
+        end_date = datetime.utcnow()
+        
+        query = text("""
+            SELECT
+                time_bucket(:interval, created_at) AS time_bucket,
+                AVG(temperature) as avg_temperature,
+                AVG(humidity) as avg_humidity
+            FROM health_data
+            WHERE user_id = :user_id
+                AND created_at >= :start_date
+                AND created_at <= :end_date
+            GROUP BY time_bucket
+            ORDER BY time_bucket ASC
+        """)
+        
+        result = db.execute(
+            query,
+            {
+                "interval": interval,
+                "user_id": user_id,
+                "start_date": start_date,
+                "end_date": end_date
+            }
+        ).fetchall()
+        
+        return {
+            "labels": [row[0].strftime("%m/%d %H:%M") for row in result],
+            "temperature": [round(float(row[1]), 1) if row[1] else None for row in result],
+            "humidity": [round(float(row[2]), 1) if row[2] else None for row in result]
+        }
+    
+    def get_chart_data_cry_frequency(
+        self,
+        db: Session,
+        user_id: int,
+        interval: str = "1 hour",
+        days: int = 7
+    ) -> Dict[str, Any]:
+        """
+        📊 BAR CHART: Số lần khóc theo thời gian
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            interval: Time bucket ('1 hour', '1 day')
+            days: Number of days to look back
+        
+        Returns:
+            {
+                "labels": ["Mon", "Tue", "Wed", ...],
+                "cry_count": [5, 3, 8, 2, 1, 4, 6],
+                "sick_count": [1, 0, 2, 0, 0, 1, 1]
+            }
+        
+        Usage in Flutter:
+            - Use fl_chart BarChart
+            - X-axis: day labels
+            - Y-axis: count
+            - Two bar groups: cry_count (blue), sick_count (red)
+        """
+        start_date = datetime.utcnow() - timedelta(days=days)
+        end_date = datetime.utcnow()
+        
+        query = text("""
+            SELECT
+                time_bucket(:interval, created_at) AS time_bucket,
+                SUM(CASE WHEN cry_detected THEN 1 ELSE 0 END) as cry_count,
+                SUM(CASE WHEN sick_detected THEN 1 ELSE 0 END) as sick_count
+            FROM health_data
+            WHERE user_id = :user_id
+                AND created_at >= :start_date
+                AND created_at <= :end_date
+            GROUP BY time_bucket
+            ORDER BY time_bucket ASC
+        """)
+        
+        result = db.execute(
+            query,
+            {
+                "interval": interval,
+                "user_id": user_id,
+                "start_date": start_date,
+                "end_date": end_date
+            }
+        ).fetchall()
+        
+        return {
+            "labels": [row[0].strftime("%a %d") for row in result],
+            "cry_count": [int(row[1]) for row in result],
+            "sick_count": [int(row[2]) for row in result]
+        }
+    
+    def get_chart_data_health_distribution(
+        self,
+        db: Session,
+        user_id: int,
+        days: int = 7
+    ) -> Dict[str, Any]:
+        """
+        🥧 PIE CHART: Phân bố trạng thái sức khỏe
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            days: Number of days to look back
+        
+        Returns:
+            {
+                "labels": ["Bình thường", "Khóc", "Sốt", "Nguy hiểm"],
+                "values": [120, 15, 8, 3],
+                "percentages": [82.2, 10.3, 5.5, 2.1]
+            }
+        
+        Usage in Flutter:
+            - Use fl_chart PieChart
+            - Each segment: label + percentage
+            - Colors: green, yellow, orange, red
+        """
+        start_date = datetime.utcnow() - timedelta(days=days)
+        
+        query = text("""
+            SELECT
+                COUNT(*) FILTER (WHERE NOT cry_detected AND NOT sick_detected) as normal,
+                COUNT(*) FILTER (WHERE cry_detected AND NOT sick_detected) as crying,
+                COUNT(*) FILTER (WHERE NOT cry_detected AND sick_detected) as fever,
+                COUNT(*) FILTER (WHERE cry_detected AND sick_detected) as critical
+            FROM health_data
+            WHERE user_id = :user_id
+                AND created_at >= :start_date
+        """)
+        
+        result = db.execute(query, {"user_id": user_id, "start_date": start_date}).fetchone()
+        
+        total = sum(result) if result else 0
+        
+        if total == 0:
+            return {
+                "labels": ["Bình thường", "Khóc", "Sốt", "Nguy hiểm"],
+                "values": [0, 0, 0, 0],
+                "percentages": [0, 0, 0, 0],
+                "colors": ["#4CAF50", "#FFC107", "#FF9800", "#F44336"]
+            }
+        
+        return {
+            "labels": ["Bình thường", "Khóc", "Sốt", "Nguy hiểm"],
+            "values": [result[0], result[1], result[2], result[3]],
+            "percentages": [
+                round(result[0] / total * 100, 1),
+                round(result[1] / total * 100, 1),
+                round(result[2] / total * 100, 1),
+                round(result[3] / total * 100, 1)
+            ],
+            "colors": ["#4CAF50", "#FFC107", "#FF9800", "#F44336"]
+        }
+    
+    def get_chart_data_hourly_heatmap(
+        self,
+        db: Session,
+        user_id: int,
+        days: int = 7
+    ) -> Dict[str, Any]:
+        """
+        🔥 HEATMAP: Giờ nào bé hay khóc (theo giờ và ngày trong tuần)
+        
+        Args:
+            db: Database session
+            user_id: User ID
+            days: Number of days to look back
+        
+        Returns:
+            {
+                "hours": [0, 1, 2, ..., 23],
+                "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+                "data": [
+                    [0, 0, 1, 2, ...],  # Monday
+                    [1, 0, 0, 3, ...],  # Tuesday
+                    ...
+                ]
+            }
+        
+        Usage in Flutter:
+            - Use custom heatmap widget or fl_chart
+            - X-axis: hours (0-23)
+            - Y-axis: days of week
+            - Color intensity: number of cries
+        """
+        start_date = datetime.utcnow() - timedelta(days=days)
+        
+        query = text("""
+            SELECT
+                EXTRACT(DOW FROM created_at) as day_of_week,
+                EXTRACT(HOUR FROM created_at) as hour,
+                COUNT(*) FILTER (WHERE cry_detected) as cry_count
+            FROM health_data
+            WHERE user_id = :user_id
+                AND created_at >= :start_date
+            GROUP BY day_of_week, hour
+            ORDER BY day_of_week, hour
+        """)
+        
+        result = db.execute(query, {"user_id": user_id, "start_date": start_date}).fetchall()
+        
+        # Initialize 7x24 matrix (7 days, 24 hours)
+        heatmap = [[0 for _ in range(24)] for _ in range(7)]
+        
+        for row in result:
+            day = int(row[0])  # 0=Sunday, 6=Saturday
+            hour = int(row[1])
+            count = int(row[2])
+            heatmap[day][hour] = count
+        
+        return {
+            "hours": list(range(24)),
+            "days": ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+            "data": heatmap
+        }
     
     def get_health_record(self, db: Session, record_id: int, user_id: int) -> Optional[HealthData]:
         """Get a specific health record."""
