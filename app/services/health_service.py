@@ -99,12 +99,17 @@ class HealthService:
         db.commit()
         
         # Fetch the complete record
-        db_record = db.exec(
-            select(HealthData).where(
-                HealthData.id == row[0],
-                HealthData.created_at == row[1]
-            )
-        ).first()
+        db_record = HealthData(
+            id=row[0],
+            user_id=row[1],
+            temperature=row[2],
+            humidity=row[3],
+            audio_url=row[4],
+            cry_detected=row[5],
+            sick_detected=row[6],
+            notes=row[7],
+            created_at=row[8]
+        )
         
         # ✅ Verify saved value
         print(f"💾 Saved to DB → sick_detected: {db_record.sick_detected}")
